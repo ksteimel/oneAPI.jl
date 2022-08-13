@@ -1,4 +1,4 @@
-export oneArray, oneVector, oneMatrix, oneVecOrMat
+export oneArray, oneVector, oneMatrix, oneVecOrMat, oapi
 
 
 ## array storage
@@ -348,6 +348,61 @@ Adapt.adapt_storage(::Type{oneArray}, xs::AT) where {AT<:AbstractArray} =
 # if an element type is specified, convert to it
 Adapt.adapt_storage(::Type{<:oneArray{T}}, xs::AT) where {T, AT<:AbstractArray} =
   isbitstype(AT) ? xs : convert(oneArray{T}, xs)
+
+## opinionated gpu array adaptor
+
+# eagerly converts Float64 to Float32, for performance reasons
+
+struct oneArrayAdaptor end
+
+Adapt.adapt_storage(::oneArrayAdaptor, xs::AbstractArray{T,N}) where {T,N} =
+  isbits(xs) ? xs : oneArray{T,N}(xs)
+
+Adapt.adapt_storage(::oneArrayAdaptor, xs::AbstractArray{T,N}) where {T<:AbstractFloat,N} =
+  isbits(xs) ? xs : oneArray{Float32,N}(xs)
+
+Adapt.adapt_storage(::oneArrayAdaptor, xs::AbstractArray{T,N}) where {T<:Complex{<:AbstractFloat},N} =
+  isbits(xs) ? xs : oneArray{ComplexF32,N}(xs)
+
+# not for Float16
+#Adapt.adapt_storage(::OneArrayAdaptor{B}, xs::AbstractArray{T,N}) where {T<:Union{Float16,BFloat16},N,B} =
+#  isbits(xs) ? xs : OneArray{T,N,B}(xs)
+
+"""
+    oapi(A; unified=false)
+Opinionated GPU array adaptor, which may alter the element type `T` of arrays:
+* For `T<:AbstractFloat`, it makes a `OneArray{Float32}` for performance reasons.
+  (Except that `Float16` and `BFloat16` element types are not changed.)
+* For `T<:Complex{<:AbstractFloat}` it makes a `CuArray{ComplexF32}`.
+* For other `isbitstype(T)`, it makes a `CuArray{T}`.
+By contrast, `OneArray(A)` never changes the element type.
+Uses Adapt.jl to act inside some wrapper structs.
+# Examples
+```
+julia> oapi(ones(3)')
+1×3 adjoint(::OneArray{Float32, 1, CUDA.Mem.DeviceBuffer}) with eltype Float32:
+ 1.0  1.0  1.0
+julia> oapi(zeros(1, 3); unified=true)
+1×3 OneArray{Float32, 2, CUDA.Mem.UnifiedBuffer}:
+ 0.0  0.0  0.0
+julia> oapi(1:3)
+1:3
+julia> OneArray(ones(3)')  # ignores Adjoint, preserves Float64
+1×3 OneArray{Float64, 2, CUDA.Mem.DeviceBuffer}:
+ 1.0  1.0  1.0
+julia> adapt(OneArray, ones(3)')  # this restores Adjoint wrapper
+1×3 adjoint(::OneArray{Float64, 1, CUDA.Mem.DeviceBuffer}) with eltype Float64:
+ 1.0  1.0  1.0
+julia> OneArray(1:3)
+3-element OneArray{Int64, 1, CUDA.Mem.DeviceBuffer}:
+ 1
+ 2
+ 3
+```
+"""
+@inline oapi(xs) = adapt(oneArrayAdaptor(), xs)
+
+Base.getindex(::typeof(oapi), xs...) = oneArray([xs...])
 
 ## utilities
 

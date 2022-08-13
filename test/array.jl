@@ -26,6 +26,19 @@ end
   @test Array(Adapt.adapt(oneArray, A)) == A
 end
 
+@testset "oapi" begin
+  cpu_64bit = rand(Float64, 3,3)
+  cpu_32bit = convert(Matrix{Float32}, cpu_64bit)
+  oapi_32bit = oneArray(cpu_32bit)
+  oapi_mult = oapi(*)
+  # Test that 32 bit floats are the same as passing through oneArray
+  @test isequal(oapi(cpu_32bit), oapi_32bit)
+  # Test that 64 bit floats are converted to 32 bit
+  @test isequal(oapi(cpu_64bit), oapi_32bit)
+  # Test that functions are passed through unmodified
+  @test oapi_mult(oapi_32bit, oapi_32bit) == oapi_32bit * oapi_32bit
+end
+
 @testset "reshape" begin
   A = [1 2 3 4
        5 6 7 8]
